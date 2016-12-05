@@ -12,5 +12,6 @@ const Album = sequelizeConnection.define('album', {
 	}
 });
 
+//instead of min and max we could also use {len: [1, 100]}
 
 module.exports = Album;
