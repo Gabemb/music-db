@@ -7,6 +7,7 @@ const sequelizeConnection = require('./db');
 
 const Artist = require('./models/artist-model');
 const Song = require('./models/song-model');
+const Genre = require('./models/genre-model');
 
 //body-parser middleware adds .body property to req (if we make a POST AJAX request with some data attached, that data will be accessible as req.body)
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -69,8 +70,12 @@ app.delete('/api/artists/:id', (req, res) => {
 	Artist.destroy({
 		where: {id: req.params.id}
 	})
-	.then( (data) => {
-		console.log(data)
+	.then( () => {
+		res.sendStatus(200);
+	})
+	.catch( (err) => {
+		console.log(err);
+		res.sendStatus(500)
 	})
 });
 
@@ -85,7 +90,7 @@ app.put('/api/artists/:id/:newName', (req, res) => {
 	})
 	.catch( (err) => {
 		console.log(err);
-		res.sendStatus(err.status)
+		res.sendStatus(500)
 	})
 });
 
@@ -95,14 +100,14 @@ app.put('/api/artists/:id/:newName', (req, res) => {
 //GET all songs with genre and artist information fully populated
 app.get('/api/songs', (req, res) => {
 	Song.findAll({
-		include: [{all: true}]
+		include: [ {all: true} ]
 	})
 	.then( (songs) => {
 		res.send(songs);
 	})
 	.catch( (err) => {
 		consle.log(err);
-		res.sendStatus(err.status);
+		res.sendStatus(500);
 	})
 });
 
@@ -114,34 +119,61 @@ app.get('/api/songs/:id', (req, res) => {
 	})
 	.catch( (err) => {
 		console.log(err);
-		res.sendStatus(err.status);
+		res.sendStatus(500);
 	})
 });
 
+//Adding a class level method to the Song model to be able to simultaneously =>
+//bulkCreate & findOrCreate through an array of objects
+Genre.bulkFindOrCreate = (arr) => {
+	let instanceArr = []
+	arr.forEach( (genreNames) => {
+  	instanceArr.push( Genre.findOrCreate({
+  		where: {title: genreNames}
+  	}) )
+  });
+  return Promise.all(instanceArr)
+};
+
+
 //POST (create) a new song
 app.post('/api/songs', (req, res) => {
-	let newSong;
-	Song.findOrCreate({
-		where: {
-			title: req.body.title,
-			youtube_url: req.body.url}
-	})
-	.then( (song) => {
-		newSong = song;
-		return Artist.findOrCreate({
-			where: {name: req.body.artist}
+let genreArr = JSON.parse(req.body.genres)
+let newSong;
+
+	const createSongAddGenres = (artistId) => {
+		let genreIds = [];
+		Song.findOrCreate({
+			where: {
+				title: req.body.title,
+				youtube_url: req.body.url,
+				artistId: artistId 
+			}
 		})
+		.then( (data) => {
+			newSong = data[0]
+			return Genre.bulkFindOrCreate(genreArr).then( (genres) => {
+				return genres.map( (genre) => genre[0].dataValues.id);
+			});
+		})
+		.then( (genreIds) => {
+			console.log("newSong =========>", newSong)
+			newSong.addGenres(genreIds);
+		})
+		.then( () => {
+			res.sendStatus(200);
+		})
+	}
+
+	Artist.findOrCreate({
+			where: {name: req.body.artist}
 	})
 	.then( (artist) => {
-		newSong.addArtist(artist[0].dataValues.id);
-		newSong.addGenres(req.body.genre);
-	})
-	.then( () => {
-		res.sendStatus(200);
+		createSongAddGenres(artist[0].dataValues.id)
 	})
 	.catch( (err) => {
 		console.log("Something went wrong while creating song: ", err);
-		res.sendStatus(err.status);
+		res.sendStatus(500);
 	})
 });
 
@@ -157,7 +189,7 @@ app.put('/api/songs/:id/:newTitle', (req, res) => {
 	.catch( (err) => {
 		console.log(err);
 		console.error(err);
-		res.sendStatus(err.status);
+		res.sendStatus(500);
 	})
 });
 
@@ -167,11 +199,13 @@ app.delete("/api/songs/:id", (req, res) => {
 		where: {id: req.params.id}
 	})
 	.then( () => {
-
+		res.sendStatus(200)
 	})
-})
-
-
+	.catch( (err) => {
+		console.log(err);
+		res.sendStatus(500);
+	})
+});
 
 
 app.get('/*', (req, res) => {
