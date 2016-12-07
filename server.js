@@ -8,6 +8,7 @@ const sequelizeConnection = require('./db');
 const Artist = require('./models/artist-model');
 const Song = require('./models/song-model');
 const Genre = require('./models/genre-model');
+const Playlist = require('./models/playlist-model');
 
 //body-parser middleware adds .body property to req (if we make a POST AJAX request with some data attached, that data will be accessible as req.body)
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -126,23 +127,24 @@ app.get('/api/songs/:id', (req, res) => {
 //Adding a class level method to the Song model to be able to simultaneously =>
 //bulkCreate & findOrCreate through an array of objects
 Genre.bulkFindOrCreate = (arr) => {
-	let instanceArr = []
+	let promiseArr = []
 	arr.forEach( (genreNames) => {
-  	instanceArr.push( Genre.findOrCreate({
+  	promiseArr.push( Genre.findOrCreate({
   		where: {title: genreNames}
   	}) )
   });
-  return Promise.all(instanceArr)
+  return Promise.all(promiseArr)
 };
 
 
 //POST (create) a new song
 app.post('/api/songs', (req, res) => {
-let genreArr = JSON.parse(req.body.genres)
+let genreArr = JSON.parse(req.body.genres) //keeps array an array, json has to all caps!!
 let newSong;
-
+	
+	//callback
+	//seperate into "server utilitiy file" in the future
 	const createSongAddGenres = (artistId) => {
-		let genreIds = [];
 		Song.findOrCreate({
 			where: {
 				title: req.body.title,
@@ -150,21 +152,25 @@ let newSong;
 				artistId: artistId 
 			}
 		})
-		.then( (data) => {
-			newSong = data[0]
+		.then( (song) => {
+			newSong = song[0]
 			return Genre.bulkFindOrCreate(genreArr).then( (genres) => {
 				return genres.map( (genre) => genre[0].dataValues.id);
 			});
 		})
 		.then( (genreIds) => {
-			console.log("newSong =========>", newSong)
 			newSong.addGenres(genreIds);
 		})
 		.then( () => {
-			res.sendStatus(200);
+			res.send(newSong);
+		})
+		.catch( (err) => {
+			console.log("Something went wrong while creating the song and genres: ", err)
+			res.sendStatus(500)
 		})
 	}
 
+	//POST request begins here
 	Artist.findOrCreate({
 			where: {name: req.body.artist}
 	})
@@ -172,7 +178,7 @@ let newSong;
 		createSongAddGenres(artist[0].dataValues.id)
 	})
 	.catch( (err) => {
-		console.log("Something went wrong while creating song: ", err);
+		console.log("Something went wrong while creating the artist and song: ", err);
 		res.sendStatus(500);
 	})
 });
@@ -205,6 +211,57 @@ app.delete("/api/songs/:id", (req, res) => {
 		console.log(err);
 		res.sendStatus(500);
 	})
+});
+
+//GET all playlists with song information fully populated (in other words, should say full song, artist, and genre names, instead of only having the ids)
+app.get('/api/playlists', (req, res) => {
+	Playlist.findAll({
+		include: [{
+			model: Song,
+			include: [Artist, Genre]
+		}]
+	})
+	.then( (playlists) => {
+		res.send(playlists);
+	})
+	.catch( (err) => {
+		console.log(err);
+		res.sendStatus(500);
+	});
+});
+
+//GET a specific playlist by id
+app.get('/api/playlists/:id', (req, res) => {
+	Playlist.findById(req.params.id)
+	.then( (playlist) => {
+		res.send(playlist);
+	})
+	.catch( (err) => {
+		console.log(err);
+		res.sendStatus(500)
+	})
+})
+
+
+//POST (create) a new playlist
+app.post('/api/playlists', (req, res) => {
+	let songArr = JSON.parse(req.body.songs);
+	let newPlaylist;
+	Playlist.findOrCreate({
+		where: {title: req.body.title}
+	})
+	.then( (playlist) => {
+		newPlaylist = playlist[0]
+		newPlaylist.addSongs(songArr);
+		return newPlaylist
+	})
+	.then( (newPlaylist) => {
+		res.send(newPlaylist);
+	})
+	.catch( (err) => {
+		console.log(err);
+		res.sendStatus(500);
+	});
 });
 
 
