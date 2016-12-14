@@ -1,5 +1,6 @@
 const express = require('express');
 const app = express();
+const session = require('express-session')
 const path = require('path');
 const bodyParser = require('body-parser');
 const Sequelize = require('sequelize');
@@ -21,6 +22,73 @@ app.use(express.static(path.join(__dirname, '/front/bundle')));
 //listen on port 8888
 app.listen('9999', () => console.log('Listening on port 9999'));
 
+//Set up session for all requests
+app.use(session({
+  secret: 'gabe is the best',
+  resave: true,
+  saveUninitialized: true,
+  cookie: { secure: true }
+}))
+
+
+//Login route:
+//Will recieve username and password through POST request
+//check if user exists
+//IF user exists, check if password is correct
+//ELSE IF user does not exist, create new user
+//(if they have correct password, or if new user) give them key and attach login (cookie/session) info to req/res, and send
+//ELSE tell they have have incorrect password/or not authroized
+
+app.post('/login', (req, res) => {
+	console.log(req.body)
+	console.log(req.session)
+	let userInfo = req.body;
+	User.sync()
+	//check if user exists
+	.then( () => {
+		User.findOne({
+			where: {
+				username: userInfo.username
+			}
+		});
+	})
+	//IF user exists, check if password is correct
+	.then( (user) => {
+		if (user && user.password === userInfo.password){
+
+			console.log("Password is correct!");
+			return user;
+		//ELSE IF user does not exists, create new user	
+		} else if (!user) {
+			console.log("Creating new user!");
+			return User.create(userInfo);
+		} else {
+			return null;
+		}
+	})
+	.then( (user) => {
+		if(user) {
+			req.session.username = user.username;
+			req.session.save(); //if you do res.send() then you dont need this as res.send automatically saves it
+			console.log('Updated session?', req.session);
+			res.send(user);
+		} else {
+			res.send('Incorrect password!')
+		}
+	})
+});
+
+//Authentication route (fire when app first laods)
+app.get('/auth', (req, res) => {
+	console.log('session', req.session)
+	if (req.session.username) {
+		res.send(req.session.username);
+	} else {
+		res.send(null);
+	}
+})
+
+//req.session.id
 
 
 //////////
@@ -154,9 +222,10 @@ let newSong;
 		})
 		.then( (song) => {
 			newSong = song[0]
-			return Genre.bulkFindOrCreate(genreArr).then( (genres) => {
-				return genres.map( (genre) => genre[0].dataValues.id);
-			});
+			return Genre.bulkFindOrCreate(genreArr)
+				.then( (genres) => {
+					return genres.map( (genre) => genre[0].dataValues.id);
+				});
 		})
 		.then( (genreIds) => {
 			newSong.addGenres(genreIds);

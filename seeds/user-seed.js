@@ -12,8 +12,8 @@ User.sync({ force: true })
 	)
 )
 
-.then( (user) => {
-	user.addPlaylist([1, 2])
-})
+// .then( (user) => {
+// 	user.addPlaylist([1, 2])
+// })
 
 .catch( (err) => console.log(err))
